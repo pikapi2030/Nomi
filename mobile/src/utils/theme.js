@@ -1,0 +1,43 @@
+export const darkTheme = {
+  mode: 'dark',
+  colors: {
+    background: '#0F172A',
+    card: '#1E293B',
+    surface: '#1E293B',
+    text: '#F8FAFC',
+    textSecondary: '#94A3B8',
+    primary: '#3B82F6',
+    primaryDark: '#2563EB',
+    accent: '#60A5FA',
+    border: '#334155',
+    inputBg: '#1E293B',
+    myBubble: '#2563EB',
+    myBubbleText: '#FFFFFF',
+    otherBubble: '#334155',
+    otherBubbleText: '#F8FAFC',
+    statusOnline: '#10B981',
+    error: '#EF4444',
+  },
+};
+
+export const lightTheme = {
+  mode: 'light',
+  colors: {
+    background: '#F8FAFC',
+    card: '#FFFFFF',
+    surface: '#FFFFFF',
+    text: '#0F172A',
+    textSecondary: '#64748B',
+    primary: '#2563EB',
+    primaryDark: '#1D4ED8',
+    accent: '#3B82F6',
+    border: '#E2E8F0',
+    inputBg: '#F1F5F9',
+    myBubble: '#2563EB',
+    myBubbleText: '#FFFFFF',
+    otherBubble: '#E2E8F0',
+    otherBubbleText: '#0F172A',
+    statusOnline: '#10B981',
+    error: '#EF4444',
+  },
+};
