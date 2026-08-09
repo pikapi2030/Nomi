@@ -203,6 +203,11 @@ const HomeScreen = ({ navigation }) => {
         </View>
       </View>
 
+      {/* Visible OTA Update Test Banner */}
+      <View style={[styles.otaBanner, { backgroundColor: colors.primary }]}>
+        <Text style={styles.otaBannerText}>⚡ Live OTA Update Test: Nomi V2 Connected!</Text>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchSection}>
         <Input
@@ -370,6 +375,17 @@ const styles = StyleSheet.create({
   },
   avatarBtn: {
     marginLeft: 6,
+  },
+  otaBanner: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otaBannerText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchSection: {
     paddingHorizontal: 16,
