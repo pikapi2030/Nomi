@@ -25,7 +25,7 @@ const protect = async (req, res, next) => {
         });
       }
 
-      next();
+      return next();
     } catch (error) {
       console.error('[Auth Middleware Error]:', error.message);
       return res.status(401).json({
@@ -43,4 +43,6 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+// Export middleware directly and as property for universal compatibility
+protect.protect = protect;
+module.exports = protect;

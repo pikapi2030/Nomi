@@ -1,8 +1,16 @@
+const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Message = require('../models/Message');
 
-const setupSocket = (io) => {
+const setupSocket = (server) => {
+  const io = new Server(server, {
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST'],
+    },
+  });
+
   // Map of online users: userId -> set of socketIds
   const onlineUsers = new Map();
 
@@ -139,6 +147,8 @@ const setupSocket = (io) => {
       }
     });
   });
+
+  return io;
 };
 
 module.exports = setupSocket;
