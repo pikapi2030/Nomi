@@ -70,11 +70,15 @@ const ChatScreen = ({ route, navigation }) => {
 
         // Mark unread messages as read
         const unreadIds = res.data.messages
-          .filter(
-            (m) =>
-              m.sender?._id !== currentUser._id &&
-              !m.readBy?.some((r) => r.user === currentUser._id)
-          )
+          .filter((m) => {
+            const senderId = m.sender?._id ? m.sender._id.toString() : m.sender?.toString();
+            if (senderId === currentUser._id.toString()) return false;
+            const hasRead = m.readBy?.some((r) => {
+              const rId = r.user?._id ? r.user._id.toString() : r.user?.toString();
+              return rId === currentUser._id.toString();
+            });
+            return !hasRead;
+          })
           .map((m) => m._id);
 
         if (unreadIds.length > 0 && socket) {
@@ -114,8 +118,8 @@ const ChatScreen = ({ route, navigation }) => {
         });
 
         // Auto mark read if sender is not me
-        const senderId = newMessage.sender?._id || newMessage.sender;
-        if (senderId !== currentUser._id) {
+        const senderId = newMessage.sender?._id ? newMessage.sender._id.toString() : newMessage.sender?.toString();
+        if (senderId !== currentUser._id.toString()) {
           socket.emit('mark_read', { chatId, messageIds: [newMessage._id] });
         }
 
@@ -146,7 +150,10 @@ const ChatScreen = ({ route, navigation }) => {
         setMessages((prev) =>
           prev.map((m) => {
             if (messageIds.includes(m._id)) {
-              const alreadyRead = m.readBy?.some((r) => r.user === readerId);
+              const alreadyRead = m.readBy?.some((r) => {
+                const rId = r.user?._id ? r.user._id.toString() : r.user?.toString();
+                return rId === readerId.toString();
+              });
               if (!alreadyRead) {
                 return {
                   ...m,
@@ -249,14 +256,13 @@ const ChatScreen = ({ route, navigation }) => {
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
-        alert('Permission to access camera roll is required to share photos!');
+        alert('Permission to access photos is required.');
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.6,
+        quality: 0.3,
         base64: true,
       });
 
@@ -286,6 +292,7 @@ const ChatScreen = ({ route, navigation }) => {
       }
     } catch (err) {
       console.error('[Pick Image Error]:', err.message);
+      alert('Failed to send image. Please try a smaller photo.');
     } finally {
       setSending(false);
     }
@@ -309,17 +316,19 @@ const ChatScreen = ({ route, navigation }) => {
 
   // Render individual message item
   const renderMessageItem = ({ item }) => {
-    const isMe = item.sender?._id
-      ? item.sender._id.toString() === currentUser._id.toString()
-      : item.sender?.toString() === currentUser._id.toString();
+    const senderId = item.sender?._id ? item.sender._id.toString() : item.sender?.toString();
+    const isMe = senderId === currentUser._id.toString();
 
     const timestamp = formatChatTimestamp(item.createdAt);
 
-    // Read Receipt logic
+    // Robust Read Receipt logic: check if any participant other than sender is in readBy array
     const isReadByOther =
       isMe &&
       item.readBy &&
-      item.readBy.some((r) => r.user?.toString() !== currentUser._id.toString());
+      item.readBy.some((r) => {
+        const readerId = r.user?._id ? r.user._id.toString() : r.user?.toString();
+        return readerId && readerId !== currentUser._id.toString();
+      });
 
     return (
       <View style={[styles.messageRow, isMe ? styles.myMessageRow : styles.otherMessageRow]}>

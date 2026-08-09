@@ -21,16 +21,16 @@ const userRoutes = require('./routes/userRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 
-// Global Middleware
+// Global Middleware with 50MB payload limit for base64 image sharing
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'success',
-    message: 'ChatLoop API Server is running',
+    message: 'Nomi API Server is running',
     timestamp: new Date().toISOString(),
   });
 });
@@ -64,7 +64,7 @@ if (process.env.NODE_ENV !== 'test') {
   // Connect to MongoDB then start server
   connectDB().then(() => {
     server.listen(PORT, () => {
-      console.log(`[ChatLoop Server] Running on port ${PORT}`);
+      console.log(`[Nomi Server] Running on port ${PORT}`);
     });
   });
 }
