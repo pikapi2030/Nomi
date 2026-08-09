@@ -262,7 +262,8 @@ const ChatScreen = ({ route, navigation }) => {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.3,
+        allowsEditing: true,
+        quality: 0.25,
         base64: true,
       });
 
@@ -291,8 +292,8 @@ const ChatScreen = ({ route, navigation }) => {
         }
       }
     } catch (err) {
-      console.error('[Pick Image Error]:', err.message);
-      alert('Failed to send image. Please try a smaller photo.');
+      console.error('[Pick Image Error]:', err?.response?.data || err.message);
+      alert(err.response?.data?.message || err.message || 'Failed to send image.');
     } finally {
       setSending(false);
     }
