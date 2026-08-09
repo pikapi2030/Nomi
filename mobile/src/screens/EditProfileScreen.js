@@ -151,7 +151,7 @@ const EditProfileScreen = ({ navigation }) => {
               />
             </View>
             <Text style={[styles.privacySubtext, { color: colors.textSecondary }]}>
-              When disabled, only your Display Name is shown throughout ChatLoop, and your username remains hidden from other users.
+              When disabled, only your Display Name is shown throughout Nomi, and your username remains hidden from other users.
             </Text>
           </View>
 

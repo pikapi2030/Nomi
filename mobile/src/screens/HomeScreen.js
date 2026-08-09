@@ -134,7 +134,7 @@ const HomeScreen = ({ navigation }) => {
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={styles.brandContainer}>
           <Text style={styles.brandIcon}>💬</Text>
-          <Text style={[styles.brandTitle, { color: colors.text }]}>ChatLoop</Text>
+          <Text style={[styles.brandTitle, { color: colors.text }]}>Nomi</Text>
         </View>
 
         <View style={styles.headerActions}>

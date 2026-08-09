@@ -11,7 +11,7 @@ const SplashScreen = () => {
       <View style={styles.logoBadge}>
         <Text style={styles.logoIcon}>💬</Text>
       </View>
-      <Text style={[styles.title, { color: colors.text }]}>ChatLoop</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Nomi</Text>
       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
         Real-time Messaging Redefined
       </Text>

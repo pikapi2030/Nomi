@@ -52,7 +52,7 @@ const LoginScreen = ({ navigation }) => {
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Sign in to continue to ChatLoop
+            Sign in to continue to Nomi
           </Text>
         </View>
 

@@ -69,7 +69,7 @@ const RegisterScreen = ({ navigation }) => {
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Join ChatLoop with your unique username
+            Join Nomi with your unique username
           </Text>
         </View>
 
