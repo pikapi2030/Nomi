@@ -1,31 +1,59 @@
 const mongoose = require('mongoose');
 
-const MessageSchema = new mongoose.Schema(
+const messageSchema = new mongoose.Schema(
   {
     chatId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Chat',
-      required: [true, 'chatId is required'],
+      required: true,
       index: true,
     },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'sender is required'],
+      required: true,
     },
     text: {
       type: String,
-      required: [true, 'Message text cannot be empty'],
-      trim: true,
-      maxlength: [4000, 'Message text exceeds 4000 character limit'],
+      default: '',
     },
+    messageType: {
+      type: String,
+      enum: ['text', 'image'],
+      default: 'text',
+    },
+    imageUrl: {
+      type: String,
+      default: '',
+    },
+    readBy: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        readAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    reactions: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        emoji: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
   }
 );
 
-// Compound index for querying chat message history chronologically
-MessageSchema.index({ chatId: 1, createdAt: 1 });
-
-module.exports = mongoose.model('Message', MessageSchema);
+module.exports = mongoose.model('Message', messageSchema);

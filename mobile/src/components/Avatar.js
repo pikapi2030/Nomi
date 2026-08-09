@@ -33,46 +33,62 @@ const getInitials = (text = '') => {
   return text.substring(0, 2).toUpperCase();
 };
 
-const Avatar = ({ uri, name = 'User', size = 48, style }) => {
+const Avatar = ({ uri, name = 'User', size = 48, showOnlineBadge = false, isOnline = false, style }) => {
   const { theme } = useTheme();
   const colors = theme.colors;
   const [imageError, setImageError] = useState(false);
 
   const initials = getInitials(name);
   const avatarBgColor = getColorForName(name);
-
-  // If a valid custom uri exists and hasn't errored, render Image, otherwise render instant native initials
   const hasCustomUri = uri && typeof uri === 'string' && uri.trim().startsWith('http') && !imageError;
 
+  const badgeSize = Math.max(10, Math.floor(size * 0.28));
+
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: avatarBgColor,
-        },
-        style,
-      ]}
-    >
-      {hasCustomUri ? (
-        <Image
-          source={{ uri: uri.trim() }}
-          style={{ width: size, height: size, borderRadius: size / 2 }}
-          resizeMode="cover"
-          onError={() => setImageError(true)}
+    <View style={[{ width: size, height: size }, style]}>
+      <View
+        style={[
+          styles.avatarContainer,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: avatarBgColor,
+          },
+        ]}
+      >
+        {hasCustomUri ? (
+          <Image
+            source={{ uri: uri.trim() }}
+            style={{ width: size, height: size, borderRadius: size / 2 }}
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <Text style={[styles.initialsText, { fontSize: size * 0.4 }]}>{initials}</Text>
+        )}
+      </View>
+
+      {/* Online Status Badge Overlay */}
+      {showOnlineBadge && isOnline ? (
+        <View
+          style={[
+            styles.onlineBadge,
+            {
+              width: badgeSize,
+              height: badgeSize,
+              borderRadius: badgeSize / 2,
+              borderColor: colors.background,
+            },
+          ]}
         />
-      ) : (
-        <Text style={[styles.initialsText, { fontSize: size * 0.4 }]}>{initials}</Text>
-      )}
+      ) : null}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  avatarContainer: {
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
@@ -81,6 +97,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  onlineBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#10B981', // Green badge
+    borderWidth: 2,
   },
 });
 

@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
 import Avatar from '../components/Avatar';
 import Input from '../components/Input';
@@ -23,6 +24,7 @@ const HomeScreen = ({ navigation }) => {
   const { theme, toggleTheme, isDark } = useTheme();
   const colors = theme.colors;
   const { user: currentUser, logout } = useAuth();
+  const { socket } = useSocket();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -33,7 +35,6 @@ const HomeScreen = ({ navigation }) => {
   const [chatsLoading, setChatsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Calculate safe top padding for Android notch / camera cutout
   const safeTopPadding = Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 0, insets.top) + 6 : insets.top;
 
   // Fetch user chats
@@ -55,7 +56,7 @@ const HomeScreen = ({ navigation }) => {
     fetchChats();
   }, [fetchChats]);
 
-  // Focus listener to refresh chat list when returning from ChatScreen
+  // Refresh chat list when screen gains focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       fetchChats();
@@ -63,7 +64,42 @@ const HomeScreen = ({ navigation }) => {
     return unsubscribe;
   }, [navigation, fetchChats]);
 
-  // Perform user search when searchQuery changes
+  // Listen to real-time user online/offline status updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleUserStatus = ({ userId, isOnline, lastSeen }) => {
+      setChats((prevChats) =>
+        prevChats.map((chat) => {
+          if (chat.isGroup) return chat;
+          const updatedParticipants = chat.participants.map((p) => {
+            if (p._id && p._id.toString() === userId.toString()) {
+              return { ...p, isOnline, lastSeen };
+            }
+            return p;
+          });
+          return { ...chat, participants: updatedParticipants };
+        })
+      );
+
+      setSearchResults((prevResults) =>
+        prevResults.map((u) => {
+          if (u._id && u._id.toString() === userId.toString()) {
+            return { ...u, isOnline, lastSeen };
+          }
+          return u;
+        })
+      );
+    };
+
+    socket.on('user_status', handleUserStatus);
+
+    return () => {
+      socket.off('user_status', handleUserStatus);
+    };
+  }, [socket]);
+
+  // Search users
   useEffect(() => {
     if (!searchQuery.trim()) {
       setIsSearching(false);
@@ -94,7 +130,6 @@ const HomeScreen = ({ navigation }) => {
     fetchChats();
   };
 
-  // Open or create chat with selected user from search
   const handleSelectUserFromSearch = async (otherUser) => {
     try {
       const res = await api.post('/chats', { recipientId: otherUser._id });
@@ -108,16 +143,21 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  // Open chat from recent list
   const handleSelectChat = (chatItem) => {
-    const otherUser = chatItem.participants.find(
-      (p) => p._id && p._id.toString() !== currentUser._id.toString()
-    );
-    navigation.navigate('Chat', { chat: chatItem, otherUser });
+    if (chatItem.isGroup) {
+      navigation.navigate('Chat', { chat: chatItem });
+    } else {
+      const otherUser = chatItem.participants.find(
+        (p) => p._id && p._id.toString() !== currentUser._id.toString()
+      );
+      navigation.navigate('Chat', { chat: chatItem, otherUser });
+    }
   };
 
-  // Helper to extract recipient from participants
   const getOtherParticipant = (chatItem) => {
+    if (chatItem.isGroup) {
+      return { displayName: chatItem.groupName || 'Group Chat', avatar: chatItem.groupAvatar };
+    }
     if (!chatItem.participants) return { displayName: 'User' };
     return (
       chatItem.participants.find(
@@ -138,16 +178,21 @@ const HomeScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.headerActions}>
+          {/* Create Group Button */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CreateGroup')}
+            style={[styles.iconBtn, { backgroundColor: colors.surface }]}
+          >
+            <Text style={styles.actionIcon}>👥</Text>
+          </TouchableOpacity>
+
           {/* Theme Toggle */}
           <TouchableOpacity onPress={toggleTheme} style={[styles.iconBtn, { backgroundColor: colors.surface }]}>
             <Text style={styles.actionIcon}>{isDark ? '☀️' : '🌙'}</Text>
           </TouchableOpacity>
 
           {/* User Profile Shortcut */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Profile')}
-            style={styles.avatarBtn}
-          >
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={styles.avatarBtn}>
             <Avatar uri={currentUser?.avatar} name={currentUser?.displayName} size={36} />
           </TouchableOpacity>
 
@@ -171,7 +216,6 @@ const HomeScreen = ({ navigation }) => {
 
       {/* Main Content View */}
       {isSearching ? (
-        // Search Results Mode
         <View style={styles.contentContainer}>
           <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>
             Search Results ({searchResults.length})
@@ -189,7 +233,7 @@ const HomeScreen = ({ navigation }) => {
                   onPress={() => handleSelectUserFromSearch(item)}
                   style={[styles.userListItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 >
-                  <Avatar uri={item.avatar} name={item.displayName} size={50} />
+                  <Avatar uri={item.avatar} name={item.displayName} size={50} isOnline={item.isOnline} showOnlineBadge />
                   <View style={styles.userListItemDetails}>
                     <Text style={[styles.displayName, { color: colors.text }]}>{item.displayName}</Text>
                     {item.username ? (
@@ -214,7 +258,6 @@ const HomeScreen = ({ navigation }) => {
           )}
         </View>
       ) : (
-        // Recent Chats Mode
         <View style={styles.contentContainer}>
           <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>Recent Chats</Text>
           {chatsLoading ? (
@@ -225,8 +268,12 @@ const HomeScreen = ({ navigation }) => {
               keyExtractor={(item) => item._id}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
               renderItem={({ item }) => {
-                const otherUser = getOtherParticipant(item);
-                const lastMsgText = item.lastMessage ? item.lastMessage.text : 'Tap to start conversation';
+                const chatInfo = getOtherParticipant(item);
+                const lastMsgText = item.lastMessage
+                  ? item.lastMessage.messageType === 'image'
+                    ? '📷 Photo'
+                    : item.lastMessage.text
+                  : 'Tap to start conversation';
                 const timestamp = formatChatTimestamp(item.updatedAt);
 
                 return (
@@ -235,15 +282,26 @@ const HomeScreen = ({ navigation }) => {
                     onPress={() => handleSelectChat(item)}
                     style={[styles.chatListItem, { borderBottomColor: colors.border }]}
                   >
-                    <Avatar uri={otherUser.avatar} name={otherUser.displayName} size={54} />
+                    <Avatar
+                      uri={chatInfo.avatar}
+                      name={chatInfo.displayName}
+                      size={54}
+                      isOnline={chatInfo.isOnline}
+                      showOnlineBadge={!item.isGroup}
+                    />
                     <View style={styles.chatListItemDetails}>
                       <View style={styles.chatItemRow}>
-                        <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
-                          {otherUser.displayName}
-                        </Text>
-                        <Text style={[styles.timestampText, { color: colors.textSecondary }]}>
-                          {timestamp}
-                        </Text>
+                        <View style={styles.nameBadgeRow}>
+                          <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
+                            {chatInfo.displayName}
+                          </Text>
+                          {item.isGroup ? (
+                            <View style={[styles.groupBadge, { backgroundColor: colors.primary }]}>
+                              <Text style={styles.groupBadgeText}>Group</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text style={[styles.timestampText, { color: colors.textSecondary }]}>{timestamp}</Text>
                       </View>
 
                       <Text numberOfLines={1} style={[styles.lastMsgText, { color: colors.textSecondary }]}>
@@ -258,7 +316,7 @@ const HomeScreen = ({ navigation }) => {
                   <Text style={styles.emptyEmoji}>💬</Text>
                   <Text style={[styles.emptyTitle, { color: colors.text }]}>No Conversations Yet</Text>
                   <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                    Search for users by username or display name above to start messaging!
+                    Search for users or tap 👥 to create a group chat!
                   </Text>
                 </View>
               )}
@@ -305,13 +363,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
   },
   actionIcon: {
     fontSize: 18,
   },
   avatarBtn: {
-    marginLeft: 8,
+    marginLeft: 6,
   },
   searchSection: {
     paddingHorizontal: 16,
@@ -348,6 +406,22 @@ const styles = StyleSheet.create({
   },
   displayName: {
     fontSize: 16,
+    fontWeight: '700',
+  },
+  nameBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  groupBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  groupBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '700',
   },
   usernameText: {

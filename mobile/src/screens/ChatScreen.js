@@ -10,14 +10,20 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  Image,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
 import Avatar from '../components/Avatar';
 import { formatChatTimestamp } from '../utils/formatTime';
+
+const REACTION_EMOJIS = ['❤️', '👍', '😂', '🔥', '😮', '👏'];
 
 const ChatScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
@@ -34,34 +40,55 @@ const ChatScreen = ({ route, navigation }) => {
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
 
+  // V2 Feature States
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingUser, setTypingUser] = useState('');
+  const [otherUserStatus, setOtherUserStatus] = useState(routeOtherUser || {});
+  const [selectedMessageForReaction, setSelectedMessageForReaction] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
+
   const flatListRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
-  // Calculate safe top padding for Android notch / camera cutout
   const safeTopPadding = Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 0, insets.top) + 4 : insets.top;
+  const isGroup = initialChat?.isGroup;
 
-  // Extract recipient user (always showing Display Name)
   const recipientUser =
+    otherUserStatus._id ? otherUserStatus :
     routeOtherUser ||
     initialChat?.participants?.find(
       (p) => p._id && p._id.toString() !== currentUser._id.toString()
     ) || { displayName: 'Chat' };
 
-  // Fetch message history from REST API
+  // Fetch messages from REST API
   const fetchMessages = useCallback(async () => {
     if (!chatId) return;
     try {
       const res = await api.get(`/messages/${chatId}`);
       if (res.data?.messages) {
         setMessages(res.data.messages);
+
+        // Mark unread messages as read
+        const unreadIds = res.data.messages
+          .filter(
+            (m) =>
+              m.sender?._id !== currentUser._id &&
+              !m.readBy?.some((r) => r.user === currentUser._id)
+          )
+          .map((m) => m._id);
+
+        if (unreadIds.length > 0 && socket) {
+          socket.emit('mark_read', { chatId, messageIds: unreadIds });
+        }
       }
     } catch (err) {
       console.error('[Fetch Messages Error]:', err.message);
     } finally {
       setLoading(false);
     }
-  }, [chatId]);
+  }, [chatId, currentUser._id, socket]);
 
-  // Initial setup & Socket.io room lifecycle
+  // Initial setup & Socket room lifecycle
   useEffect(() => {
     if (!chatId) return;
 
@@ -73,77 +100,214 @@ const ChatScreen = ({ route, navigation }) => {
     };
   }, [chatId, fetchMessages, joinChat, leaveChat]);
 
-  // Real-time socket message receiver
+  // Socket listeners for real-time features
   useEffect(() => {
     if (!socket || !chatId) return;
 
+    // Receive Message
     const handleReceiveMessage = (newMessage) => {
       if (newMessage.chatId === chatId) {
-        setMessages((prevMessages) => {
-          // Avoid duplicate messages
-          const exists = prevMessages.some((m) => m._id === newMessage._id);
-          if (exists) return prevMessages;
-          return [...prevMessages, newMessage];
+        setMessages((prev) => {
+          const exists = prev.some((m) => m._id === newMessage._id);
+          if (exists) return prev;
+          return [...prev, newMessage];
         });
+
+        // Auto mark read if sender is not me
+        const senderId = newMessage.sender?._id || newMessage.sender;
+        if (senderId !== currentUser._id) {
+          socket.emit('mark_read', { chatId, messageIds: [newMessage._id] });
+        }
+
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
     };
 
+    // User Typing
+    const handleUserTyping = ({ chatId: eventChatId, user }) => {
+      if (eventChatId === chatId && user._id !== currentUser._id) {
+        setIsTyping(true);
+        setTypingUser(user.displayName);
+      }
+    };
+
+    const handleUserStopTyping = ({ chatId: eventChatId, user }) => {
+      if (eventChatId === chatId && user._id !== currentUser._id) {
+        setIsTyping(false);
+        setTypingUser('');
+      }
+    };
+
+    // Messages Read Status
+    const handleMessagesRead = ({ chatId: eventChatId, messageIds, userId: readerId }) => {
+      if (eventChatId === chatId) {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (messageIds.includes(m._id)) {
+              const alreadyRead = m.readBy?.some((r) => r.user === readerId);
+              if (!alreadyRead) {
+                return {
+                  ...m,
+                  readBy: [...(m.readBy || []), { user: readerId, readAt: new Date() }],
+                };
+              }
+            }
+            return m;
+          })
+        );
+      }
+    };
+
+    // Message Reaction Updated
+    const handleReactionUpdated = ({ messageId, reactions }) => {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+      );
+    };
+
+    // Online Status Update
+    const handleUserStatus = ({ userId, isOnline, lastSeen }) => {
+      if (recipientUser._id && recipientUser._id.toString() === userId.toString()) {
+        setOtherUserStatus((prev) => ({ ...prev, isOnline, lastSeen }));
+      }
+    };
+
     socket.on('receive_message', handleReceiveMessage);
+    socket.on('user_typing', handleUserTyping);
+    socket.on('user_stop_typing', handleUserStopTyping);
+    socket.on('messages_read', handleMessagesRead);
+    socket.on('reaction_updated', handleReactionUpdated);
+    socket.on('user_status', handleUserStatus);
 
     return () => {
       socket.off('receive_message', handleReceiveMessage);
+      socket.off('user_typing', handleUserTyping);
+      socket.off('user_stop_typing', handleUserStopTyping);
+      socket.off('messages_read', handleMessagesRead);
+      socket.off('reaction_updated', handleReactionUpdated);
+      socket.off('user_status', handleUserStatus);
     };
-  }, [socket, chatId]);
+  }, [socket, chatId, currentUser._id, recipientUser._id]);
 
-  // Scroll to bottom when messages load
-  const handleContentSizeChange = () => {
-    if (messages.length > 0) {
-      flatListRef.current?.scrollToEnd({ animated: false });
-    }
+  // Emit typing status on text input change
+  const handleInputChange = (text) => {
+    setInputText(text);
+
+    if (!socket || !chatId) return;
+
+    socket.emit('typing', { chatId });
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('stop_typing', { chatId });
+    }, 1500);
   };
 
-  // Handle sending a new message
-  const handleSend = async () => {
+  // Send Text Message
+  const handleSendText = async () => {
     const textToSend = inputText.trim();
     if (!textToSend || !chatId || sending) return;
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (socket) socket.emit('stop_typing', { chatId });
 
     setInputText('');
     setSending(true);
 
     try {
-      // 1. Send message via REST API to persist in MongoDB
-      const res = await api.post('/messages', { chatId, text: textToSend });
+      const res = await api.post('/messages', {
+        chatId,
+        text: textToSend,
+        messageType: 'text',
+      });
 
       if (res.data?.message) {
         const savedMessage = res.data.message;
-
-        // Add to local state if not already received via socket
         setMessages((prev) => {
           const exists = prev.some((m) => m._id === savedMessage._id);
           if (exists) return prev;
           return [...prev, savedMessage];
         });
-
-        // 2. Broadcast message instantly via Socket.io
         sendMessageSocket(savedMessage);
-
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
     } catch (err) {
       console.error('[Send Message Error]:', err.message);
-      // Restore input text on error
       setInputText(textToSend);
     } finally {
       setSending(false);
     }
   };
 
-  // Render individual message bubble
+  // Pick & Send Photo / Image
+  const handlePickImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        alert('Permission to access camera roll is required to share photos!');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.6,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0].base64) {
+        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+
+        setSending(true);
+        const res = await api.post('/messages', {
+          chatId,
+          text: '',
+          messageType: 'image',
+          imageUrl: base64Image,
+        });
+
+        if (res.data?.message) {
+          const savedMessage = res.data.message;
+          setMessages((prev) => {
+            const exists = prev.some((m) => m._id === savedMessage._id);
+            if (exists) return prev;
+            return [...prev, savedMessage];
+          });
+          sendMessageSocket(savedMessage);
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        }
+      }
+    } catch (err) {
+      console.error('[Pick Image Error]:', err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Handle Adding Reaction to Message
+  const handleSelectReaction = async (emoji) => {
+    if (!selectedMessageForReaction) return;
+    const msgId = selectedMessageForReaction._id;
+    setSelectedMessageForReaction(null);
+
+    try {
+      if (socket) {
+        socket.emit('add_reaction', { messageId: msgId, chatId, emoji });
+      }
+      await api.post(`/messages/${msgId}/react`, { emoji });
+    } catch (err) {
+      console.error('[React Error]:', err.message);
+    }
+  };
+
+  // Render individual message item
   const renderMessageItem = ({ item }) => {
     const isMe = item.sender?._id
       ? item.sender._id.toString() === currentUser._id.toString()
@@ -151,43 +315,70 @@ const ChatScreen = ({ route, navigation }) => {
 
     const timestamp = formatChatTimestamp(item.createdAt);
 
+    // Read Receipt logic
+    const isReadByOther =
+      isMe &&
+      item.readBy &&
+      item.readBy.some((r) => r.user?.toString() !== currentUser._id.toString());
+
     return (
-      <View
-        style={[
-          styles.messageRow,
-          isMe ? styles.myMessageRow : styles.otherMessageRow,
-        ]}
-      >
-        <View
-          style={[
+      <View style={[styles.messageRow, isMe ? styles.myMessageRow : styles.otherMessageRow]}>
+        <Pressable
+          onLongPress={() => setSelectedMessageForReaction(item)}
+          style={({ pressed }) => [
             styles.messageBubble,
             isMe
               ? [styles.myBubble, { backgroundColor: colors.myBubble }]
               : [styles.otherBubble, { backgroundColor: colors.otherBubble }],
+            pressed && { opacity: 0.9 },
           ]}
         >
-          <Text
-            style={[
-              styles.messageText,
-              { color: isMe ? colors.myBubbleText : colors.otherBubbleText },
-            ]}
-          >
-            {item.text}
-          </Text>
+          {/* Sender Name in Group Chat */}
+          {isGroup && !isMe ? (
+            <Text style={[styles.senderName, { color: colors.primary }]}>
+              {item.sender?.displayName || 'Member'}
+            </Text>
+          ) : null}
 
-          <Text
-            style={[
-              styles.messageTime,
-              {
-                color: isMe
-                  ? 'rgba(255, 255, 255, 0.7)'
-                  : colors.textSecondary,
-              },
-            ]}
-          >
-            {timestamp}
-          </Text>
-        </View>
+          {/* Message Content: Image or Text */}
+          {item.messageType === 'image' && item.imageUrl ? (
+            <TouchableOpacity onPress={() => setPreviewImage(item.imageUrl)}>
+              <Image source={{ uri: item.imageUrl }} style={styles.messageImage} resizeMode="cover" />
+            </TouchableOpacity>
+          ) : (
+            <Text style={[styles.messageText, { color: isMe ? colors.myBubbleText : colors.otherBubbleText }]}>
+              {item.text}
+            </Text>
+          )}
+
+          {/* Reactions Row */}
+          {item.reactions && item.reactions.length > 0 ? (
+            <View style={styles.reactionsRow}>
+              {item.reactions.map((r, idx) => (
+                <Text key={idx} style={styles.reactionEmoji}>
+                  {r.emoji}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          {/* Footer Row: Timestamp & Read Receipt Checkmark */}
+          <View style={styles.messageFooterRow}>
+            <Text
+              style={[
+                styles.messageTime,
+                { color: isMe ? 'rgba(255, 255, 255, 0.7)' : colors.textSecondary },
+              ]}
+            >
+              {timestamp}
+            </Text>
+            {isMe ? (
+              <Text style={[styles.readCheckmark, { color: isReadByOther ? '#60A5FA' : 'rgba(255,255,255,0.7)' }]}>
+                {isReadByOther ? ' ✓✓' : ' ✓'}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
       </View>
     );
   };
@@ -198,33 +389,43 @@ const ChatScreen = ({ route, navigation }) => {
 
       {/* Header Bar */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={[styles.backIcon, { color: colors.text }]}>←</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           activeOpacity={0.8}
+          disabled={isGroup}
           onPress={() => navigation.navigate('Profile', { userId: recipientUser._id })}
           style={styles.headerTitleContainer}
         >
-          <Avatar uri={recipientUser.avatar} name={recipientUser.displayName} size={42} />
+          <Avatar
+            uri={isGroup ? initialChat.groupAvatar : recipientUser.avatar}
+            name={isGroup ? initialChat.groupName : recipientUser.displayName}
+            size={42}
+            isOnline={recipientUser.isOnline}
+            showOnlineBadge={!isGroup}
+          />
           <View style={styles.headerTextDetails}>
             <Text style={[styles.headerDisplayName, { color: colors.text }]} numberOfLines={1}>
-              {recipientUser.displayName}
+              {isGroup ? initialChat.groupName || 'Group Chat' : recipientUser.displayName}
             </Text>
-            {recipientUser.username ? (
-              <Text style={[styles.headerUsername, { color: colors.textSecondary }]}>
-                @{recipientUser.username}
+
+            {/* Online Status / Member Count Subtitle */}
+            {isGroup ? (
+              <Text style={[styles.headerStatus, { color: colors.textSecondary }]}>
+                {initialChat.participants?.length || 0} members
               </Text>
-            ) : null}
+            ) : (
+              <Text style={[styles.headerStatus, { color: recipientUser.isOnline ? '#10B981' : colors.textSecondary }]}>
+                {recipientUser.isOnline ? 'Online' : 'Offline'}
+              </Text>
+            )}
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* Messages List Area */}
+      {/* Messages Area */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
@@ -239,38 +440,48 @@ const ChatScreen = ({ route, navigation }) => {
             keyExtractor={(item) => item._id}
             renderItem={renderMessageItem}
             contentContainerStyle={styles.messagesListContent}
-            onContentSizeChange={handleContentSizeChange}
             ListEmptyComponent={() => (
               <View style={styles.emptyMessagesContainer}>
                 <Text style={[styles.emptyMessagesText, { color: colors.textSecondary }]}>
-                  This is the start of your conversation with {recipientUser.displayName}.
+                  This is the start of your conversation with {isGroup ? initialChat.groupName : recipientUser.displayName}.
                 </Text>
               </View>
             )}
           />
         )}
 
+        {/* Animated Typing Indicator Bar */}
+        {isTyping ? (
+          <View style={[styles.typingBar, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.typingText, { color: colors.primary }]}>
+              ✍️ {typingUser || 'Someone'} is typing...
+            </Text>
+          </View>
+        ) : null}
+
         {/* Input Bar */}
         <View style={[styles.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+          {/* Photo Attachment Button */}
+          <TouchableOpacity onPress={handlePickImage} style={styles.attachButton} disabled={sending}>
+            <Text style={styles.attachIcon}>📷</Text>
+          </TouchableOpacity>
+
           <TextInput
             placeholder="Write a message..."
             placeholderTextColor={colors.textSecondary}
             value={inputText}
-            onChangeText={setInputText}
+            onChangeText={handleInputChange}
             multiline
             style={[styles.textInput, { backgroundColor: colors.inputBg, color: colors.text }]}
           />
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={handleSend}
+            onPress={handleSendText}
             disabled={!inputText.trim() || sending}
             style={[
               styles.sendButton,
-              {
-                backgroundColor:
-                  inputText.trim() && !sending ? colors.primary : colors.border,
-              },
+              { backgroundColor: inputText.trim() && !sending ? colors.primary : colors.border },
             ]}
           >
             {sending ? (
@@ -281,6 +492,41 @@ const ChatScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Reaction Emoji Picker Modal */}
+      <Modal
+        visible={!!selectedMessageForReaction}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedMessageForReaction(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedMessageForReaction(null)}>
+          <View style={[styles.reactionBarContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {REACTION_EMOJIS.map((emoji) => (
+              <TouchableOpacity key={emoji} onPress={() => handleSelectReaction(emoji)} style={styles.reactionBtn}>
+                <Text style={styles.reactionBtnEmoji}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Full Screen Image Preview Modal */}
+      <Modal
+        visible={!!previewImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImage(null)}
+      >
+        <View style={styles.imagePreviewModal}>
+          <TouchableOpacity onPress={() => setPreviewImage(null)} style={styles.closeImageBtn}>
+            <Text style={styles.closeImageText}>✕ Close</Text>
+          </TouchableOpacity>
+          {previewImage ? (
+            <Image source={{ uri: previewImage }} style={styles.fullPreviewImage} resizeMode="contain" />
+          ) : null}
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -318,9 +564,10 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
   },
-  headerUsername: {
+  headerStatus: {
     fontSize: 12,
     marginTop: 1,
+    fontWeight: '500',
   },
   keyboardContainer: {
     flex: 1,
@@ -346,7 +593,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   messageBubble: {
-    maxWidth: '78%',
+    maxWidth: '80%',
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 8,
@@ -359,15 +606,56 @@ const styles = StyleSheet.create({
   otherBubble: {
     borderBottomLeftRadius: 4,
   },
+  senderName: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
   messageText: {
     fontSize: 15,
     lineHeight: 21,
   },
-  messageTime: {
-    fontSize: 10,
+  messageImage: {
+    width: 200,
+    height: 180,
+    borderRadius: 12,
+    marginVertical: 4,
+  },
+  reactionsRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  reactionEmoji: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  messageFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     alignSelf: 'flex-end',
     marginTop: 4,
+  },
+  messageTime: {
+    fontSize: 10,
     fontWeight: '500',
+  },
+  readCheckmark: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  typingBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  typingText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    fontWeight: '600',
   },
   emptyMessagesContainer: {
     padding: 30,
@@ -383,9 +671,16 @@ const styles = StyleSheet.create({
   inputBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderTopWidth: 1,
+  },
+  attachButton: {
+    padding: 8,
+    marginRight: 4,
+  },
+  attachIcon: {
+    fontSize: 22,
   },
   textInput: {
     flex: 1,
@@ -401,12 +696,56 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 10,
+    marginLeft: 8,
   },
   sendIcon: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reactionBarContainer: {
+    flexDirection: 'row',
+    padding: 12,
+    borderRadius: 30,
+    borderWidth: 1,
+    elevation: 5,
+  },
+  reactionBtn: {
+    paddingHorizontal: 10,
+  },
+  reactionBtnEmoji: {
+    fontSize: 26,
+  },
+  imagePreviewModal: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeImageBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  closeImageText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  fullPreviewImage: {
+    width: '100%',
+    height: '80%',
   },
 });
 

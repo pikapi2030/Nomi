@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const ChatSchema = new mongoose.Schema(
+const chatSchema = new mongoose.Schema(
   {
     participants: [
       {
@@ -9,10 +9,25 @@ const ChatSchema = new mongoose.Schema(
         required: true,
       },
     ],
+    isGroup: {
+      type: Boolean,
+      default: false,
+    },
+    groupName: {
+      type: String,
+      default: '',
+    },
+    groupAdmin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    groupAvatar: {
+      type: String,
+      default: '',
+    },
     lastMessage: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Message',
-      default: null,
     },
   },
   {
@@ -20,7 +35,4 @@ const ChatSchema = new mongoose.Schema(
   }
 );
 
-// Compound index to help efficiently find 1-to-1 chats between users
-ChatSchema.index({ participants: 1 });
-
-module.exports = mongoose.model('Chat', ChatSchema);
+module.exports = mongoose.model('Chat', chatSchema);

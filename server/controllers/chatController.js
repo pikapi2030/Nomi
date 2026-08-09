@@ -1,129 +1,107 @@
 const Chat = require('../models/Chat');
 const User = require('../models/User');
 
-/**
- * Format user privacy settings inside populated chat participants
- */
-const formatChatParticipants = (chatDoc, currentUserId) => {
-  const chat = chatDoc.toObject ? chatDoc.toObject() : chatDoc;
-
-  if (chat.participants && Array.isArray(chat.participants)) {
-    chat.participants = chat.participants.map((participant) => {
-      if (typeof participant === 'object' && participant._id) {
-        delete participant.password;
-        const isSelf = participant._id.toString() === currentUserId.toString();
-        if (!isSelf && (!participant.privacy || participant.privacy.showUsername === false)) {
-          participant.username = undefined;
-        }
-      }
-      return participant;
-    });
-  }
-
-  return chat;
-};
-
-// @desc    Create or get existing 1-on-1 chat
-// @route   POST /api/chats
-// @access  Private
+// Create or access 1-on-1 chat
 const accessChat = async (req, res) => {
   try {
-    const { recipientId, userId } = req.body;
-    const targetUserId = recipientId || userId;
-
-    if (!targetUserId) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Recipient userId is required',
-      });
+    const { recipientId } = req.body;
+    if (!recipientId) {
+      return res.status(400).json({ status: 'error', message: 'Recipient ID is required' });
     }
 
-    if (targetUserId.toString() === req.user._id.toString()) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'You cannot create a chat with yourself',
-      });
+    if (recipientId === req.user._id.toString()) {
+      return res.status(400).json({ status: 'error', message: 'Cannot create chat with yourself' });
     }
 
-    // Verify recipient user exists
-    const recipient = await User.findById(targetUserId);
+    // Check if recipient exists
+    const recipient = await User.findById(recipientId);
     if (!recipient) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Recipient user not found',
-      });
+      return res.status(404).json({ status: 'error', message: 'Recipient user not found' });
     }
 
-    // Check if a chat already exists between these two users
+    // Check if 1-on-1 chat already exists
     let existingChat = await Chat.findOne({
-      participants: { $all: [req.user._id, targetUserId] },
+      isGroup: false,
+      participants: { $all: [req.user._id, recipientId] },
     })
-      .populate('participants', '-password')
-      .populate({
-        path: 'lastMessage',
-        populate: { path: 'sender', select: 'displayName avatar' },
-      });
+      .populate('participants', 'displayName username avatar bio privacy isOnline lastSeen')
+      .populate('lastMessage');
 
     if (existingChat) {
-      const formatted = formatChatParticipants(existingChat, req.user._id);
-      return res.status(200).json({
-        status: 'success',
-        data: { chat: formatted },
-      });
+      return res.status(200).json({ status: 'success', chat: existingChat });
     }
 
-    // If no chat exists, create a new 1-on-1 chat
+    // Create new 1-on-1 chat
     const newChat = await Chat.create({
-      participants: [req.user._id, targetUserId],
+      participants: [req.user._id, recipientId],
+      isGroup: false,
     });
 
-    const fullChat = await Chat.findById(newChat._id).populate('participants', '-password');
-    const formatted = formatChatParticipants(fullChat, req.user._id);
+    const fullChat = await Chat.findById(newChat._id).populate(
+      'participants',
+      'displayName username avatar bio privacy isOnline lastSeen'
+    );
 
-    return res.status(201).json({
-      status: 'success',
-      data: { chat: formatted },
-    });
-  } catch (error) {
-    console.error('[Access Chat Error]:', error);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Failed to access or create chat',
-    });
+    return res.status(201).json({ status: 'success', chat: fullChat });
+  } catch (err) {
+    console.error('[Access Chat Error]:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Server error creating chat' });
   }
 };
 
-// @desc    Get all active chats for logged-in user sorted by recent activity
-// @route   GET /api/chats
-// @access  Private
+// Create Group Chat
+const createGroupChat = async (req, res) => {
+  try {
+    const { groupName, participantIds } = req.body;
+    if (!groupName || !groupName.trim()) {
+      return res.status(400).json({ status: 'error', message: 'Group name is required' });
+    }
+
+    if (!Array.isArray(participantIds) || participantIds.length < 1) {
+      return res.status(400).json({ status: 'error', message: 'At least one participant required for group chat' });
+    }
+
+    const allParticipants = [...new Set([...participantIds, req.user._id.toString()])];
+
+    const groupChat = await Chat.create({
+      isGroup: true,
+      groupName: groupName.trim(),
+      groupAdmin: req.user._id,
+      participants: allParticipants,
+    });
+
+    const fullGroupChat = await Chat.findById(groupChat._id).populate(
+      'participants',
+      'displayName username avatar bio privacy isOnline lastSeen'
+    );
+
+    return res.status(201).json({ status: 'success', chat: fullGroupChat });
+  } catch (err) {
+    console.error('[Create Group Chat Error]:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Server error creating group chat' });
+  }
+};
+
+// Get all chats for logged in user
 const getUserChats = async (req, res) => {
   try {
     const chats = await Chat.find({
-      participants: req.user._id,
+      participants: { $in: [req.user._id] },
     })
-      .populate('participants', '-password')
-      .populate({
-        path: 'lastMessage',
-        populate: { path: 'sender', select: 'displayName avatar' },
-      })
+      .populate('participants', 'displayName username avatar bio privacy isOnline lastSeen')
+      .populate('lastMessage')
+      .populate('groupAdmin', 'displayName username')
       .sort({ updatedAt: -1 });
 
-    const formattedChats = chats.map((chat) => formatChatParticipants(chat, req.user._id));
-
-    return res.status(200).json({
-      status: 'success',
-      data: { chats: formattedChats },
-    });
-  } catch (error) {
-    console.error('[Get User Chats Error]:', error);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Failed to retrieve user chats',
-    });
+    return res.status(200).json({ status: 'success', chats });
+  } catch (err) {
+    console.error('[Get User Chats Error]:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Server error fetching chats' });
   }
 };
 
 module.exports = {
   accessChat,
+  createGroupChat,
   getUserChats,
 };

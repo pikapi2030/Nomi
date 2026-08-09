@@ -1,141 +1,99 @@
 const Message = require('../models/Message');
 const Chat = require('../models/Chat');
 
-/**
- * Format message sender user object respecting privacy settings
- */
-const formatMessageSender = (messageDoc, currentUserId) => {
-  const message = messageDoc.toObject ? messageDoc.toObject() : messageDoc;
-  if (message.sender && typeof message.sender === 'object') {
-    delete message.sender.password;
-    const isSelf = message.sender._id.toString() === currentUserId.toString();
-    if (!isSelf && (!message.sender.privacy || message.sender.privacy.showUsername === false)) {
-      message.sender.username = undefined;
-    }
-  }
-  return message;
-};
-
-// @desc    Send a new text message
-// @route   POST /api/messages
-// @access  Private
+// Send message (text or image)
 const sendMessage = async (req, res) => {
   try {
-    const { chatId, text } = req.body;
+    const { chatId, text, messageType = 'text', imageUrl = '' } = req.body;
 
-    if (!chatId || !text || !text.trim()) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'chatId and non-empty text message are required',
-      });
+    if (!chatId) {
+      return res.status(400).json({ status: 'error', message: 'Chat ID is required' });
     }
 
-    // Verify chat exists and user is a participant
-    const chat = await Chat.findById(chatId);
-    if (!chat) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Chat conversation not found',
-      });
+    if (messageType === 'text' && (!text || !text.trim())) {
+      return res.status(400).json({ status: 'error', message: 'Message text cannot be empty' });
     }
 
-    const isParticipant = chat.participants.some(
-      (p) => p.toString() === req.user._id.toString()
-    );
-
-    if (!isParticipant) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Not authorized to send message in this chat',
-      });
+    if (messageType === 'image' && !imageUrl) {
+      return res.status(400).json({ status: 'error', message: 'Image URL is required' });
     }
 
-    // Create message
-    let message = await Message.create({
+    // Create message with initial readBy entry for sender
+    const newMessage = await Message.create({
       chatId,
       sender: req.user._id,
-      text: text.trim(),
+      text: text ? text.trim() : '',
+      messageType,
+      imageUrl,
+      readBy: [{ user: req.user._id, readAt: new Date() }],
     });
 
-    // Update chat's lastMessage reference and updatedAt timestamp
-    chat.lastMessage = message._id;
-    await chat.save();
+    // Update chat lastMessage
+    await Chat.findByIdAndUpdate(chatId, { lastMessage: newMessage._id });
 
-    // Populate message sender info for UI payload
-    message = await Message.findById(message._id).populate(
+    const fullMessage = await Message.findById(newMessage._id).populate(
       'sender',
-      'displayName username avatar privacy'
+      'displayName username avatar'
     );
 
-    const formattedMessage = formatMessageSender(message, req.user._id);
-
-    return res.status(201).json({
-      status: 'success',
-      data: { message: formattedMessage },
-    });
-  } catch (error) {
-    console.error('[Send Message Error]:', error);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Failed to send message',
-    });
+    return res.status(201).json({ status: 'success', message: fullMessage });
+  } catch (err) {
+    console.error('[Send Message Error]:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Server error sending message' });
   }
 };
 
-// @desc    Get message history for a specific chat
-// @route   GET /api/messages/:chatId
-// @access  Private
-const getChatMessages = async (req, res) => {
+// Get messages for a chat
+const getMessages = async (req, res) => {
   try {
     const { chatId } = req.params;
-
-    // Verify chat exists & user is participant
-    const chat = await Chat.findById(chatId);
-    if (!chat) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Chat conversation not found',
-      });
+    if (!chatId) {
+      return res.status(400).json({ status: 'error', message: 'Chat ID is required' });
     }
 
-    const isParticipant = chat.participants.some(
-      (p) => p.toString() === req.user._id.toString()
-    );
-
-    if (!isParticipant) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Not authorized to view messages for this chat',
-      });
-    }
-
-    // Fetch messages in chronological order
     const messages = await Message.find({ chatId })
-      .populate('sender', 'displayName username avatar privacy')
+      .populate('sender', 'displayName username avatar')
+      .populate('reactions.user', 'displayName username')
       .sort({ createdAt: 1 });
 
-    const formattedMessages = messages.map((m) => formatMessageSender(m, req.user._id));
+    return res.status(200).json({ status: 'success', messages });
+  } catch (err) {
+    console.error('[Get Messages Error]:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Server error fetching messages' });
+  }
+};
 
-    return res.status(200).json({
-      status: 'success',
-      data: { messages: formattedMessages },
-    });
-  } catch (error) {
-    console.error('[Get Messages Error]:', error);
-    if (error.kind === 'ObjectId') {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid chatId format',
-      });
+// Add / Remove Reaction to Message
+const reactToMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { emoji } = req.body;
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ status: 'error', message: 'Message not found' });
     }
-    return res.status(500).json({
-      status: 'error',
-      message: 'Failed to retrieve message history',
-    });
+
+    // Filter out existing reaction from user
+    message.reactions = message.reactions.filter(
+      (r) => r.user.toString() !== req.user._id.toString()
+    );
+
+    if (emoji) {
+      message.reactions.push({ user: req.user._id, emoji });
+    }
+
+    await message.save();
+
+    return res.status(200).json({ status: 'success', reactions: message.reactions });
+  } catch (err) {
+    console.error('[React Message Error]:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Server error adding reaction' });
   }
 };
 
 module.exports = {
   sendMessage,
-  getChatMessages,
+  getMessages,
+  reactToMessage,
 };
