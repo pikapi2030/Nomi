@@ -22,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import api from '../services/api';
 import Avatar from '../components/Avatar';
+import ZoomableImage from '../components/ZoomableImage';
 import { formatChatTimestamp } from '../utils/formatTime';
 
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '🔥', '😮', '👏'];
@@ -589,18 +590,7 @@ const ChatScreen = ({ route, navigation }) => {
             <Text style={styles.closeImageText}>✕ Close</Text>
           </TouchableOpacity>
           {previewImage ? (
-            <ScrollView
-              maximumZoomScale={4}
-              minimumZoomScale={1}
-              zoomScale={1}
-              centerContent
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              style={styles.zoomScrollView}
-              contentContainerStyle={styles.zoomScrollViewContent}
-            >
-              <Image source={{ uri: previewImage }} style={styles.fullPreviewImage} resizeMode="contain" />
-            </ScrollView>
+            <ZoomableImage uri={previewImage} style={styles.fullPreviewImage} />
           ) : null}
         </View>
       </Modal>
