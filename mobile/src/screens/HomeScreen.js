@@ -41,9 +41,8 @@ const HomeScreen = ({ navigation }) => {
   const fetchChats = useCallback(async () => {
     try {
       const res = await api.get('/chats');
-      if (res.data?.chats) {
-        setChats(res.data.chats);
-      }
+      const chatList = res?.data?.chats || res?.chats || [];
+      setChats(chatList);
     } catch (err) {
       console.error('[Fetch Chats Error]:', err.message);
     } finally {
@@ -112,9 +111,8 @@ const HomeScreen = ({ navigation }) => {
       setSearchLoading(true);
       try {
         const res = await api.get(`/users/search?q=${encodeURIComponent(searchQuery.trim())}`);
-        if (res.data?.users) {
-          setSearchResults(res.data.users);
-        }
+        const userList = res?.data?.users || res?.users || [];
+        setSearchResults(userList);
       } catch (err) {
         console.error('[User Search Error]:', err.message);
       } finally {
@@ -140,14 +138,17 @@ const HomeScreen = ({ navigation }) => {
     try {
       setSearchLoading(true);
       const res = await api.post('/chats', { recipientId: otherUser._id });
-      if (res.data?.chat) {
+      const targetChat = res?.data?.chat || res?.chat;
+      if (targetChat) {
         setSearchQuery('');
         setIsSearching(false);
-        navigation.navigate('Chat', { chat: res.data.chat, otherUser });
+        navigation.navigate('Chat', { chat: targetChat, otherUser });
+      } else {
+        alert('Could not start chat. Please try again.');
       }
     } catch (err) {
       console.error('[Open Chat Error]:', err?.response?.data || err.message);
-      alert(err.response?.data?.message || 'Could not open chat. Please try again.');
+      alert(err.response?.data?.message || err.message || 'Could not open chat. Please try again.');
     } finally {
       setSearchLoading(false);
     }

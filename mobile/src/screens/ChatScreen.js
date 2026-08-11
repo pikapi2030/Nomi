@@ -65,25 +65,24 @@ const ChatScreen = ({ route, navigation }) => {
     if (!chatId) return;
     try {
       const res = await api.get(`/messages/${chatId}`);
-      if (res.data?.messages) {
-        setMessages(res.data.messages);
+      const msgList = res?.data?.messages || res?.messages || [];
+      setMessages(msgList);
 
-        // Mark unread messages as read
-        const unreadIds = res.data.messages
-          .filter((m) => {
-            const senderId = m.sender?._id ? m.sender._id.toString() : m.sender?.toString();
-            if (senderId === currentUser._id.toString()) return false;
-            const hasRead = m.readBy?.some((r) => {
-              const rId = r.user?._id ? r.user._id.toString() : r.user?.toString();
-              return rId === currentUser._id.toString();
-            });
-            return !hasRead;
-          })
-          .map((m) => m._id);
+      // Mark unread messages as read
+      const unreadIds = msgList
+        .filter((m) => {
+          const senderId = m.sender?._id ? m.sender._id.toString() : m.sender?.toString();
+          if (senderId === currentUser._id.toString()) return false;
+          const hasRead = m.readBy?.some((r) => {
+            const rId = r.user?._id ? r.user._id.toString() : r.user?.toString();
+            return rId === currentUser._id.toString();
+          });
+          return !hasRead;
+        })
+        .map((m) => m._id);
 
-        if (unreadIds.length > 0 && socket) {
-          socket.emit('mark_read', { chatId, messageIds: unreadIds });
-        }
+      if (unreadIds.length > 0 && socket) {
+        socket.emit('mark_read', { chatId, messageIds: unreadIds });
       }
     } catch (err) {
       console.error('[Fetch Messages Error]:', err.message);
@@ -231,8 +230,9 @@ const ChatScreen = ({ route, navigation }) => {
         messageType: 'text',
       });
 
-      if (res.data?.message) {
-        const savedMessage = res.data.message;
+      const savedMessage = res?.data?.message || res?.message;
+
+      if (savedMessage) {
         setMessages((prev) => {
           const exists = prev.some((m) => m._id === savedMessage._id);
           if (exists) return prev;
@@ -278,8 +278,9 @@ const ChatScreen = ({ route, navigation }) => {
           imageUrl: base64Image,
         });
 
-        if (res.data?.message) {
-          const savedMessage = res.data.message;
+        const savedMessage = res?.data?.message || res?.message;
+
+        if (savedMessage) {
           setMessages((prev) => {
             const exists = prev.some((m) => m._id === savedMessage._id);
             if (exists) return prev;
