@@ -369,7 +369,7 @@ const ChatScreen = ({ route, navigation }) => {
 
           {/* Message Content: Image or Text */}
           {item.messageType === 'image' && item.imageUrl ? (
-            <TouchableOpacity onPress={() => setPreviewImage(item.imageUrl)}>
+            <TouchableOpacity onPress={() => navigation.navigate('ImagePreview', { imageUrl: item.imageUrl })}>
               <Image source={{ uri: item.imageUrl }} style={styles.messageImage} resizeMode="cover" />
             </TouchableOpacity>
           ) : (
@@ -575,23 +575,6 @@ const ChatScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
-
-      {/* Full Screen Pinch & Double-Tap Zoomable Image Preview Modal */}
-      <Modal
-        visible={!!previewImage}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPreviewImage(null)}
-      >
-        <View style={styles.imagePreviewModal}>
-          <TouchableOpacity onPress={() => setPreviewImage(null)} style={styles.closeImageBtn}>
-            <Text style={styles.closeImageText}>✕ Close</Text>
-          </TouchableOpacity>
-          {previewImage ? (
-            <ZoomableImage uri={previewImage} style={styles.fullPreviewImage} />
-          ) : null}
         </View>
       </Modal>
     </View>

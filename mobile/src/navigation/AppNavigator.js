@@ -13,6 +13,7 @@ import ChatScreen from '../screens/ChatScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
+import ImagePreviewScreen from '../screens/ImagePreviewScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -90,6 +91,11 @@ export default function AppNavigator() {
               name="EditProfile"
               component={EditProfileScreen}
               options={{ title: 'Edit Profile' }}
+            />
+            <Stack.Screen
+              name="ImagePreview"
+              component={ImagePreviewScreen}
+              options={{ headerShown: false, animation: 'fade' }}
             />
           </>
         )}
