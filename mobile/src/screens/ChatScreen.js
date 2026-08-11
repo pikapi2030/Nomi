@@ -13,6 +13,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -45,6 +46,7 @@ const ChatScreen = ({ route, navigation }) => {
   const [typingUser, setTypingUser] = useState('');
   const [otherUserStatus, setOtherUserStatus] = useState(routeOtherUser || {});
   const [selectedMessageForReaction, setSelectedMessageForReaction] = useState(null);
+  const [selectedImageForSending, setSelectedImageForSending] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
 
   const flatListRef = useRef(null);
@@ -251,7 +253,7 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  // Pick & Send Photo / Image
+  // Pick Photo & Open Preview Confirmation Modal
   const handlePickImage = async () => {
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -263,37 +265,50 @@ const ChatScreen = ({ route, navigation }) => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.25,
+        quality: 0.3,
         base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets[0].base64) {
         const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-
-        setSending(true);
-        const res = await api.post('/messages', {
-          chatId,
-          text: '',
-          messageType: 'image',
-          imageUrl: base64Image,
-        });
-
-        const savedMessage = res?.data?.message || res?.message;
-
-        if (savedMessage) {
-          setMessages((prev) => {
-            const exists = prev.some((m) => m._id === savedMessage._id);
-            if (exists) return prev;
-            return [...prev, savedMessage];
-          });
-          sendMessageSocket(savedMessage);
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }
+        setSelectedImageForSending(base64Image);
       }
     } catch (err) {
       console.error('[Pick Image Error]:', err?.response?.data || err.message);
+      alert('Failed to pick photo. Please try again.');
+    }
+  };
+
+  // Confirm & Send Photo to Chat
+  const confirmSendImage = async () => {
+    if (!selectedImageForSending || !chatId || sending) return;
+    const imgToSend = selectedImageForSending;
+    setSelectedImageForSending(null);
+
+    try {
+      setSending(true);
+      const res = await api.post('/messages', {
+        chatId,
+        text: '',
+        messageType: 'image',
+        imageUrl: imgToSend,
+      });
+
+      const savedMessage = res?.data?.message || res?.message;
+
+      if (savedMessage) {
+        setMessages((prev) => {
+          const exists = prev.some((m) => m._id === savedMessage._id);
+          if (exists) return prev;
+          return [...prev, savedMessage];
+        });
+        sendMessageSocket(savedMessage);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    } catch (err) {
+      console.error('[Send Image Error]:', err?.response?.data || err.message);
       alert(err.response?.data?.message || err.message || 'Failed to send image.');
     } finally {
       setSending(false);
@@ -523,7 +538,46 @@ const ChatScreen = ({ route, navigation }) => {
         </Pressable>
       </Modal>
 
-      {/* Full Screen Image Preview Modal */}
+      {/* Image Send Confirmation Modal */}
+      <Modal
+        visible={!!selectedImageForSending}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedImageForSending(null)}
+      >
+        <View style={styles.confirmModalOverlay}>
+          <View style={[styles.confirmModalContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.confirmModalTitle, { color: colors.text }]}>Send Photo?</Text>
+            {selectedImageForSending ? (
+              <Image source={{ uri: selectedImageForSending }} style={styles.confirmPreviewImage} resizeMode="contain" />
+            ) : null}
+
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                onPress={() => setSelectedImageForSending(null)}
+                style={[styles.confirmCancelBtn, { backgroundColor: colors.surface }]}
+                disabled={sending}
+              >
+                <Text style={[styles.confirmCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={confirmSendImage}
+                style={[styles.confirmSendBtn, { backgroundColor: colors.primary }]}
+                disabled={sending}
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmSendText}>Send Photo ➔</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Full Screen Pinch & Double-Tap Zoomable Image Preview Modal */}
       <Modal
         visible={!!previewImage}
         transparent
@@ -535,7 +589,18 @@ const ChatScreen = ({ route, navigation }) => {
             <Text style={styles.closeImageText}>✕ Close</Text>
           </TouchableOpacity>
           {previewImage ? (
-            <Image source={{ uri: previewImage }} style={styles.fullPreviewImage} resizeMode="contain" />
+            <ScrollView
+              maximumZoomScale={4}
+              minimumZoomScale={1}
+              zoomScale={1}
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              style={styles.zoomScrollView}
+              contentContainerStyle={styles.zoomScrollViewContent}
+            >
+              <Image source={{ uri: previewImage }} style={styles.fullPreviewImage} resizeMode="contain" />
+            </ScrollView>
           ) : null}
         </View>
       </Modal>
@@ -757,7 +822,70 @@ const styles = StyleSheet.create({
   },
   fullPreviewImage: {
     width: '100%',
-    height: '80%',
+    height: '100%',
+  },
+  zoomScrollView: {
+    flex: 1,
+    width: '100%',
+  },
+  zoomScrollViewContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  confirmModalContainer: {
+    width: '100%',
+    maxHeight: '80%',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+  },
+  confirmModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  confirmPreviewImage: {
+    width: '100%',
+    height: 260,
+    borderRadius: 14,
+    marginBottom: 16,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  confirmCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  confirmSendBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  confirmSendText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
 
