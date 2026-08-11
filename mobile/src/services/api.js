@@ -4,7 +4,7 @@ import { API_BASE_URL, STORAGE_KEYS } from '../utils/constants';
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
-  timeout: 10000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,9 +28,9 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor for unified error formatting
+// Response interceptor returning standard Axios response object so res.data works across all screens
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => response,
   (error) => {
     const errorMessage =
       error.response?.data?.message ||
