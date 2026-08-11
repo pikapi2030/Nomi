@@ -39,7 +39,11 @@ const sendMessage = async (req, res) => {
       'displayName username avatar'
     );
 
-    return res.status(201).json({ status: 'success', message: fullMessage });
+    return res.status(201).json({
+      status: 'success',
+      message: fullMessage,
+      data: { message: fullMessage },
+    });
   } catch (err) {
     console.error('[Send Message Error]:', err.message);
     return res.status(500).json({ status: 'error', message: 'Server error sending message' });
@@ -59,7 +63,11 @@ const getMessages = async (req, res) => {
       .populate('reactions.user', 'displayName username')
       .sort({ createdAt: 1 });
 
-    return res.status(200).json({ status: 'success', messages });
+    return res.status(200).json({
+      status: 'success',
+      messages,
+      data: { messages },
+    });
   } catch (err) {
     console.error('[Get Messages Error]:', err.message);
     return res.status(500).json({ status: 'error', message: 'Server error fetching messages' });
@@ -88,7 +96,11 @@ const reactToMessage = async (req, res) => {
 
     await message.save();
 
-    return res.status(200).json({ status: 'success', reactions: message.reactions });
+    return res.status(200).json({
+      status: 'success',
+      reactions: message.reactions,
+      data: { reactions: message.reactions },
+    });
   } catch (err) {
     console.error('[React Message Error]:', err.message);
     return res.status(500).json({ status: 'error', message: 'Server error adding reaction' });

@@ -28,7 +28,11 @@ const accessChat = async (req, res) => {
       .populate('lastMessage');
 
     if (existingChat) {
-      return res.status(200).json({ status: 'success', chat: existingChat });
+      return res.status(200).json({
+        status: 'success',
+        chat: existingChat,
+        data: { chat: existingChat },
+      });
     }
 
     // Create new 1-on-1 chat
@@ -42,7 +46,11 @@ const accessChat = async (req, res) => {
       'displayName username avatar bio privacy isOnline lastSeen'
     );
 
-    return res.status(201).json({ status: 'success', chat: fullChat });
+    return res.status(201).json({
+      status: 'success',
+      chat: fullChat,
+      data: { chat: fullChat },
+    });
   } catch (err) {
     console.error('[Access Chat Error]:', err.message);
     return res.status(500).json({ status: 'error', message: 'Server error creating chat' });
@@ -75,7 +83,11 @@ const createGroupChat = async (req, res) => {
       'displayName username avatar bio privacy isOnline lastSeen'
     );
 
-    return res.status(201).json({ status: 'success', chat: fullGroupChat });
+    return res.status(201).json({
+      status: 'success',
+      chat: fullGroupChat,
+      data: { chat: fullGroupChat },
+    });
   } catch (err) {
     console.error('[Create Group Chat Error]:', err.message);
     return res.status(500).json({ status: 'error', message: 'Server error creating group chat' });
@@ -93,7 +105,11 @@ const getUserChats = async (req, res) => {
       .populate('groupAdmin', 'displayName username')
       .sort({ updatedAt: -1 });
 
-    return res.status(200).json({ status: 'success', chats });
+    return res.status(200).json({
+      status: 'success',
+      chats,
+      data: { chats },
+    });
   } catch (err) {
     console.error('[Get User Chats Error]:', err.message);
     return res.status(500).json({ status: 'error', message: 'Server error fetching chats' });

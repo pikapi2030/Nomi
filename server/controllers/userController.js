@@ -30,6 +30,7 @@ const searchUsers = async (req, res) => {
     if (!searchQuery) {
       return res.status(200).json({
         status: 'success',
+        users: [],
         data: { users: [] },
       });
     }
@@ -46,6 +47,7 @@ const searchUsers = async (req, res) => {
 
     return res.status(200).json({
       status: 'success',
+      users: formattedUsers,
       data: { users: formattedUsers },
     });
   } catch (error) {
@@ -75,6 +77,7 @@ const getUserById = async (req, res) => {
 
     return res.status(200).json({
       status: 'success',
+      user: formatted,
       data: { user: formatted },
     });
   } catch (error) {
@@ -108,7 +111,6 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    // Editable fields: displayName, bio, avatar, privacy.showUsername
     if (displayName !== undefined) {
       if (!displayName.trim()) {
         return res.status(400).json({
@@ -131,15 +133,13 @@ const updateProfile = async (req, res) => {
       user.privacy.showUsername = privacy.showUsername;
     }
 
-    // Explicitly enforce that username CANNOT be modified
-    // (req.body.username is ignored)
-
     await user.save();
 
     const updatedUser = formatUserProfile(user, req.user._id);
 
     return res.status(200).json({
       status: 'success',
+      user: updatedUser,
       data: { user: updatedUser },
     });
   } catch (error) {
