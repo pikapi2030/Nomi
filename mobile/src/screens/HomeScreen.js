@@ -131,7 +131,14 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleSelectUserFromSearch = async (otherUser) => {
+    if (!otherUser || !otherUser._id) return;
+    if (currentUser?._id && otherUser._id.toString() === currentUser._id.toString()) {
+      alert('Cannot start a conversation with yourself.');
+      return;
+    }
+
     try {
+      setSearchLoading(true);
       const res = await api.post('/chats', { recipientId: otherUser._id });
       if (res.data?.chat) {
         setSearchQuery('');
@@ -139,7 +146,10 @@ const HomeScreen = ({ navigation }) => {
         navigation.navigate('Chat', { chat: res.data.chat, otherUser });
       }
     } catch (err) {
-      console.error('[Open Chat Error]:', err.message);
+      console.error('[Open Chat Error]:', err?.response?.data || err.message);
+      alert(err.response?.data?.message || 'Could not open chat. Please try again.');
+    } finally {
+      setSearchLoading(false);
     }
   };
 
