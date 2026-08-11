@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 
 const connectDB = require('./config/db');
 const initSocket = require('./socket/socketHandler');
+const startPingBot = require('./utils/pingBot');
 
 // Load environment variables
 dotenv.config();
@@ -65,6 +66,11 @@ if (process.env.NODE_ENV !== 'test') {
   connectDB().then(() => {
     server.listen(PORT, () => {
       console.log(`[Nomi Server] Running on port ${PORT}`);
+
+      // Initialize Ping Bot to prevent cold starts on Render / Railway / Heroku
+      if (process.env.SERVER_URL || process.env.ENABLE_PING_BOT === 'true') {
+        startPingBot(process.env.SERVER_URL || `http://localhost:${PORT}`, parseInt(process.env.PING_INTERVAL_MINS) || 14);
+      }
     });
   });
 }

@@ -79,7 +79,14 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Exclude sensitive fields in JSON response
+// Instance method to format public user JSON without password
+userSchema.methods.toPublicJSON = function () {
+  const obj = this.toObject();
+  delete obj.password;
+  return obj;
+};
+
+// Standard toJSON override
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
