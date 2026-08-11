@@ -28,8 +28,11 @@ const sendMessage = async (req, res) => {
       readBy: [{ user: req.user._id, readAt: new Date() }],
     });
 
-    // Update chat lastMessage
-    await Chat.findByIdAndUpdate(chatId, { lastMessage: newMessage._id });
+    // Update chat lastMessage and updatedAt timestamp for sorting
+    await Chat.findByIdAndUpdate(chatId, {
+      lastMessage: newMessage._id,
+      updatedAt: new Date(),
+    });
 
     const fullMessage = await Message.findById(newMessage._id).populate(
       'sender',

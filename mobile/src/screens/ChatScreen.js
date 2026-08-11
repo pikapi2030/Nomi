@@ -450,6 +450,7 @@ const ChatScreen = ({ route, navigation }) => {
             keyExtractor={(item) => item._id}
             renderItem={renderMessageItem}
             contentContainerStyle={styles.messagesListContent}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             ListEmptyComponent={() => (
               <View style={styles.emptyMessagesContainer}>
                 <Text style={[styles.emptyMessagesText, { color: colors.textSecondary }]}>
