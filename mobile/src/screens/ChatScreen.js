@@ -254,6 +254,15 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
+  // Open image preview via navigation or fallback modal
+  const handleOpenImagePreview = (url) => {
+    try {
+      navigation.navigate('ImagePreview', { imageUrl: url });
+    } catch (e) {
+      setPreviewImage(url);
+    }
+  };
+
   // Pick Photo & Open Preview Confirmation Modal
   const handlePickImage = async () => {
     try {
@@ -369,7 +378,7 @@ const ChatScreen = ({ route, navigation }) => {
 
           {/* Message Content: Image or Text */}
           {item.messageType === 'image' && item.imageUrl ? (
-            <TouchableOpacity onPress={() => navigation.navigate('ImagePreview', { imageUrl: item.imageUrl })}>
+            <TouchableOpacity onPress={() => handleOpenImagePreview(item.imageUrl)}>
               <Image source={{ uri: item.imageUrl }} style={styles.messageImage} resizeMode="cover" />
             </TouchableOpacity>
           ) : (
@@ -575,6 +584,23 @@ const ChatScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      {/* Fail-Safe Full Screen Zoomable Image Preview Modal */}
+      <Modal
+        visible={!!previewImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImage(null)}
+      >
+        <View style={styles.imagePreviewModal}>
+          <TouchableOpacity onPress={() => setPreviewImage(null)} style={styles.closeImageBtn}>
+            <Text style={styles.closeImageText}>✕ Close</Text>
+          </TouchableOpacity>
+          {previewImage ? (
+            <ZoomableImage uri={previewImage} style={styles.fullPreviewImage} />
+          ) : null}
         </View>
       </Modal>
     </View>
