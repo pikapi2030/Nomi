@@ -50,10 +50,13 @@ const registerUser = async (req, res) => {
 
     if (user) {
       const token = generateToken(user._id);
+      const publicUser = user.toPublicJSON();
       return res.status(201).json({
         status: 'success',
+        user: publicUser,
+        token,
         data: {
-          user: user.toPublicJSON(),
+          user: publicUser,
           token,
         },
       });
@@ -109,11 +112,14 @@ const loginUser = async (req, res) => {
     }
 
     const token = generateToken(user._id);
+    const publicUser = user.toPublicJSON();
 
     return res.status(200).json({
       status: 'success',
+      user: publicUser,
+      token,
       data: {
-        user: user.toPublicJSON(),
+        user: publicUser,
         token,
       },
     });
@@ -138,10 +144,12 @@ const getMe = async (req, res) => {
         message: 'User not found',
       });
     }
+    const publicUser = user.toPublicJSON();
     return res.status(200).json({
       status: 'success',
+      user: publicUser,
       data: {
-        user: user.toPublicJSON(),
+        user: publicUser,
       },
     });
   } catch (error) {

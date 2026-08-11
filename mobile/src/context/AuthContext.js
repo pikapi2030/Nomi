@@ -26,9 +26,10 @@ export const AuthProvider = ({ children }) => {
         // Verify token with backend /api/auth/me
         try {
           const res = await api.get('/auth/me');
-          if (res.data?.user) {
-            setUser(res.data.user);
-            await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(res.data.user));
+          const userData = res.data?.user || res.data?.data?.user || res.user;
+          if (userData) {
+            setUser(userData);
+            await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(userData));
           }
         } catch (err) {
           console.warn('Token validation failed, clearing stored auth session');
@@ -45,7 +46,13 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const res = await api.post('/auth/login', credentials);
-      const { user: userData, token: userToken } = res.data;
+      const payload = res.data || res;
+      const userData = payload.user || payload.data?.user;
+      const userToken = payload.token || payload.data?.token;
+
+      if (!userToken || !userData) {
+        throw new Error('Invalid login response from server');
+      }
 
       setToken(userToken);
       setUser(userData);
@@ -62,7 +69,13 @@ export const AuthProvider = ({ children }) => {
   const register = async (userDataInput) => {
     try {
       const res = await api.post('/auth/register', userDataInput);
-      const { user: userData, token: userToken } = res.data;
+      const payload = res.data || res;
+      const userData = payload.user || payload.data?.user;
+      const userToken = payload.token || payload.data?.token;
+
+      if (!userToken || !userData) {
+        throw new Error('Invalid registration response from server');
+      }
 
       setToken(userToken);
       setUser(userData);
