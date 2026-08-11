@@ -19,11 +19,12 @@ const accessChat = async (req, res) => {
       return res.status(404).json({ status: 'error', message: 'Recipient user not found' });
     }
 
-    // Check if 1-on-1 chat already exists
+    // Find existing 1-on-1 chat (sorted by newest updated)
     let existingChat = await Chat.findOne({
       isGroup: false,
-      participants: { $all: [req.user._id, recipientId] },
+      participants: { $size: 2, $all: [req.user._id, recipientId] },
     })
+      .sort({ updatedAt: -1 })
       .populate('participants', 'displayName username avatar bio privacy isOnline lastSeen')
       .populate('lastMessage');
 
@@ -94,10 +95,10 @@ const createGroupChat = async (req, res) => {
   }
 };
 
-// Get all chats for logged in user
+// Get all chats for logged in user (with automatic 1-on-1 deduplication)
 const getUserChats = async (req, res) => {
   try {
-    const chats = await Chat.find({
+    const rawChats = await Chat.find({
       participants: { $in: [req.user._id] },
     })
       .populate('participants', 'displayName username avatar bio privacy isOnline lastSeen')
@@ -105,10 +106,30 @@ const getUserChats = async (req, res) => {
       .populate('groupAdmin', 'displayName username')
       .sort({ updatedAt: -1 });
 
+    // Deduplicate 1-on-1 chats by recipient ID, keeping the single most recently active chat
+    const seenRecipients = new Set();
+    const deduplicatedChats = rawChats.filter((chat) => {
+      if (chat.isGroup) return true;
+
+      const otherParticipant = chat.participants?.find(
+        (p) => p._id && p._id.toString() !== req.user._id.toString()
+      );
+
+      if (!otherParticipant || !otherParticipant._id) return true;
+
+      const otherId = otherParticipant._id.toString();
+      if (seenRecipients.has(otherId)) {
+        return false; // Skip duplicate older 1-on-1 chat
+      }
+
+      seenRecipients.add(otherId);
+      return true;
+    });
+
     return res.status(200).json({
       status: 'success',
-      chats,
-      data: { chats },
+      chats: deduplicatedChats,
+      data: { chats: deduplicatedChats },
     });
   } catch (err) {
     console.error('[Get User Chats Error]:', err.message);

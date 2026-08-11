@@ -37,19 +37,34 @@ const HomeScreen = ({ navigation }) => {
 
   const safeTopPadding = Platform.OS === 'android' ? Math.max(StatusBar.currentHeight || 0, insets.top) + 6 : insets.top;
 
-  // Fetch user chats
+  // Fetch user chats with client-side deduplication
   const fetchChats = useCallback(async () => {
     try {
       const res = await api.get('/chats');
       const chatList = res?.data?.chats || res?.chats || [];
-      setChats(chatList);
+
+      // Deduplicate 1-on-1 chats by recipient ID
+      const seenRecipients = new Set();
+      const cleanChats = chatList.filter((chat) => {
+        if (chat.isGroup) return true;
+        const other = chat.participants?.find(
+          (p) => p._id && currentUser?._id && p._id.toString() !== currentUser._id.toString()
+        );
+        if (!other || !other._id) return true;
+        const otherId = other._id.toString();
+        if (seenRecipients.has(otherId)) return false;
+        seenRecipients.add(otherId);
+        return true;
+      });
+
+      setChats(cleanChats);
     } catch (err) {
       console.error('[Fetch Chats Error]:', err.message);
     } finally {
       setChatsLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [currentUser?._id]);
 
   useEffect(() => {
     fetchChats();
